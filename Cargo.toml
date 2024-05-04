@@ -9,3 +9,12 @@ edition = "2021"
 easy-gltf = "1.1.2"
 nalgebra = "0.32.5"
 glam = "0.27.0"
+
+clap = { version = "4.5.4", features = ["derive"] }
+
+# Error handling
+miette = { version = "7.2.0", features = ["fancy"] }
+
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tracing-appender = "0.2.3"
