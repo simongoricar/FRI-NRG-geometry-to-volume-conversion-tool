@@ -5,11 +5,11 @@ use easy_gltf::model::Triangle;
 use miette::{miette, Context, IntoDiagnostic, Result};
 use tracing_subscriber::EnvFilter;
 
-use crate::{cli::CliArgs, logging::initialize_tracing};
+use crate::{cli::CliArgs, logging::initialize_tracing, voxelizer::voxelize_triangles};
 
 mod cli;
 mod logging;
-
+mod voxelizer;
 
 
 fn load_mesh_triangles_from_file<P>(gltf_file_path: P) -> Result<Vec<Triangle>>
@@ -64,7 +64,9 @@ fn main() -> Result<()> {
 
     println!("Loaded {} triangles.", mesh_triangles.len());
 
+
     // TODO run through voxelizer
+    voxelize_triangles(mesh_triangles);
 
     // TODO export to BVP format
 
