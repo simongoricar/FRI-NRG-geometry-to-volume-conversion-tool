@@ -1,6 +1,6 @@
 use std::ops::Div;
 
-use easy_gltf::model::{Triangle, Vertex};
+use easy_gltf::model::Triangle;
 use nalgebra::{Point3, Vector3};
 use parry3d::query::details::intersection_test_aabb_triangle;
 
@@ -364,5 +364,5 @@ pub fn voxelize_triangles(
     }
 
 
-    todo!();
+    voxel_grid
 }
