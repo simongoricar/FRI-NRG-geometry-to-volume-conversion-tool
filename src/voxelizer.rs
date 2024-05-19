@@ -8,13 +8,13 @@ use parry3d::query::details::intersection_test_aabb_triangle;
 #[derive(Clone, Debug)]
 pub struct Voxel {
     grid_index: Vector3<usize>,
-    is_filled: bool,
+    pub is_filled: bool,
 }
 
 impl Voxel {
     pub fn get_center_coordinate_in_world_space(
         &self,
-        starting_voxel_grid_point: Vector3<f32>,
+        starting_voxel_grid_point: &Vector3<f32>,
         voxel_half_size: f32,
     ) -> Vector3<f32> {
         let first_voxel_center = starting_voxel_grid_point.add_scalar(voxel_half_size);
@@ -29,8 +29,8 @@ impl Voxel {
 
 
 pub struct VoxelGrid {
-    starting_point: Vector3<f32>,
-    voxel_half_size: f32,
+    pub starting_point: Vector3<f32>,
+    pub voxel_half_size: f32,
 
     x_length: usize,
     y_length: usize,
@@ -39,6 +39,13 @@ pub struct VoxelGrid {
     /// Indexed by x, y, and z, flattened out as a single Vec.
     grid: Vec<Voxel>,
 }
+
+impl VoxelGrid {
+    pub fn voxels(&self) -> &[Voxel] {
+        &self.grid
+    }
+}
+
 
 pub struct Aabb {
     pub min: Vector3<f32>,

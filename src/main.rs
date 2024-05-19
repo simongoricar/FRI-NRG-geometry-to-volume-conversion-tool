@@ -8,18 +8,27 @@ use bevy::{
         query::With,
         system::{Commands, Local, Query, ResMut},
     },
+    input::{keyboard::KeyCode, ButtonInput},
     math::Vec3A,
-    pbr::{DirectionalLight, DirectionalLightBundle},
+    pbr::{DirectionalLight, DirectionalLightBundle, PbrBundle},
     prelude::{
         AssetPlugin,
         AssetServer,
+        Assets,
+        Color,
+        Component,
+        Cuboid,
         PluginGroup,
         Projection,
         Res,
         Resource,
+        StandardMaterial,
         Startup,
         Transform,
+        Update,
         Vec3,
+        Visibility,
+        Without,
     },
     render::{
         camera::{Camera, PerspectiveProjection},
@@ -150,9 +159,16 @@ fn main() -> Result<()> {
         .insert_resource(OriginalSceneInfo {
             scene_path: cli_args.input_file_path.to_string_lossy().to_string(),
         })
-        .insert_resource(VoxelizedMesh { voxel_grid })
-        .add_systems(Startup, set_up_scene)
-        .add_systems(PreUpdate, setup_scene_after_load)
+        .insert_resource(VoxelizedMesh {
+            voxel_grid,
+            is_visible: false,
+        })
+        .add_systems(Startup, (set_up_scene, set_up_volume))
+        .add_systems(PreUpdate, set_up_scene_after_load)
+        .add_systems(
+            Update,
+            handle_user_input_for_volume_visibility_toggle,
+        )
         .run();
 
 
@@ -169,7 +185,8 @@ pub struct OriginalSceneInfo {
 
 #[derive(Resource)]
 pub struct VoxelizedMesh {
-    voxel_grid: VoxelGrid,
+    pub voxel_grid: VoxelGrid,
+    pub is_visible: bool,
 }
 
 
@@ -205,11 +222,104 @@ fn set_up_scene(
 }
 
 
-fn setup_scene_after_load(
+#[derive(Component)]
+pub struct VoxelMarker;
+
+
+fn set_up_volume(
+    mut commands: Commands,
+    mut voxelized_mesh: ResMut<VoxelizedMesh>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut standard_materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let box_mesh_handle = meshes.add(Cuboid::from_size(Vec3::splat(
+        voxelized_mesh.voxel_grid.voxel_half_size * 2.0,
+    )));
+
+    let box_mesh_material = standard_materials.add(Color::rgb(1.0, 0.5, 1.0));
+
+    for voxel in voxelized_mesh.voxel_grid.voxels() {
+        if !voxel.is_filled {
+            continue;
+        }
+
+
+        let voxel_position_in_world_space = voxel.get_center_coordinate_in_world_space(
+            &voxelized_mesh.voxel_grid.starting_point,
+            voxelized_mesh.voxel_grid.voxel_half_size,
+        );
+
+        let voxel_transform = Transform::from_translation(Vec3::new(
+            voxel_position_in_world_space.x,
+            voxel_position_in_world_space.y,
+            voxel_position_in_world_space.z,
+        ))
+        .with_scale(Vec3::splat(
+            voxelized_mesh.voxel_grid.voxel_half_size * 2.0,
+        ));
+
+        info!(
+            "Generating voxel at ({}, {}, {}).",
+            voxel_position_in_world_space.x,
+            voxel_position_in_world_space.y,
+            voxel_position_in_world_space.z,
+        );
+
+        commands.spawn((
+            PbrBundle {
+                mesh: box_mesh_handle.clone_weak(),
+                material: box_mesh_material.clone_weak(),
+                transform: voxel_transform,
+                visibility: Visibility::Hidden,
+                ..Default::default()
+            },
+            VoxelMarker,
+        ));
+    }
+
+    voxelized_mesh.is_visible = false;
+}
+
+
+fn handle_user_input_for_volume_visibility_toggle(
+    key_input: Res<ButtonInput<KeyCode>>,
+    mut voxelized_mesh: ResMut<VoxelizedMesh>,
+    mut voxels: Query<&mut Visibility, With<VoxelMarker>>,
+    mut meshes: Query<&mut Visibility, (With<Handle<Mesh>>, Without<VoxelMarker>)>,
+) {
+    if !key_input.just_pressed(KeyCode::KeyV) {
+        return;
+    }
+
+    voxelized_mesh.is_visible = !voxelized_mesh.is_visible;
+
+    let updated_voxel_visibility = match voxelized_mesh.is_visible {
+        true => Visibility::Visible,
+        false => Visibility::Hidden,
+    };
+
+    let updated_mesh_visibility = match !voxelized_mesh.is_visible {
+        true => Visibility::Visible,
+        false => Visibility::Hidden,
+    };
+
+    info!("Toggling volume visibility (voxels now {updated_voxel_visibility:?}).");
+
+    for mut voxel_visiblity in voxels.iter_mut() {
+        *voxel_visiblity = updated_voxel_visibility;
+    }
+
+    for mut mesh_visibility in meshes.iter_mut() {
+        *mesh_visibility = updated_mesh_visibility;
+    }
+}
+
+
+fn set_up_scene_after_load(
     mut commands: Commands,
     mut scene_has_been_set_up: Local<bool>,
     mut scene_handle: ResMut<SceneHandle>,
-    meshes: Query<Option<&BevyAabb>, With<Handle<Mesh>>>,
+    meshes: Query<Option<&BevyAabb>, (With<Handle<Mesh>>, Without<VoxelMarker>)>,
 ) {
     if scene_handle.is_loaded && !*scene_has_been_set_up {
         *scene_has_been_set_up = true;
