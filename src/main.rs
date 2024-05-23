@@ -1,9 +1,4 @@
-use std::{
-    ops::{Add, Sub},
-    path::Path,
-    str::FromStr,
-    time::Instant,
-};
+use std::{path::Path, str::FromStr, time::Instant};
 
 use bevy::{
     app::{App, PreUpdate},
@@ -47,15 +42,15 @@ use easy_gltf::model::Triangle;
 use glam::Vec3 as GlamVec3;
 use miette::{miette, Context, IntoDiagnostic, Result};
 use scene_loader::{GltfSceneHandle, GltfSceneLoaderPlugin};
-use tracing::{info, trace, warn};
+use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
-use voxelizer::VoxelGrid;
+use voxelizer::{grid::ContextualVoxelGrid, voxel::VoxelData};
 
 use crate::{
     camera_controller::{CameraController, CameraControllerPlugin},
     cli::CliArgs,
     logging::initialize_tracing,
-    voxelizer::{voxelize_triangles, Aabb},
+    voxelizer::voxelize_models,
 };
 
 
@@ -80,6 +75,8 @@ where
     Ok(first_scene)
 }
 
+#[deprecated]
+#[allow(dead_code)]
 fn collect_mesh_triangles(gltf_scene: &easy_gltf::Scene) -> Result<Vec<Triangle>> {
     let mut collected_triangles: Vec<Triangle> = Vec::new();
 
@@ -94,28 +91,6 @@ fn collect_mesh_triangles(gltf_scene: &easy_gltf::Scene) -> Result<Vec<Triangle>
     Ok(collected_triangles)
 }
 
-
-fn compute_minimum_aabb_for_mesh(mesh_triangles: &[Triangle], padding: f32) -> Aabb {
-    let mut current_minimum = GlamVec3::MAX;
-    let mut current_maximum = GlamVec3::MIN;
-
-    for triangle in mesh_triangles {
-        for vertex in triangle {
-            current_minimum.x = current_minimum.x.min(vertex.position.x);
-            current_minimum.y = current_minimum.y.min(vertex.position.y);
-            current_minimum.z = current_minimum.z.min(vertex.position.z);
-
-            current_maximum.x = current_maximum.x.max(vertex.position.x);
-            current_maximum.y = current_maximum.y.max(vertex.position.y);
-            current_maximum.z = current_maximum.z.max(vertex.position.z);
-        }
-    }
-
-    Aabb::from_min_and_max(
-        current_minimum.sub(padding),
-        current_maximum.add(padding),
-    )
-}
 
 
 
@@ -144,29 +119,15 @@ fn main() -> Result<()> {
     let gltf_scene = load_gltf_scene_from_file(&cli_args.input_file_path)
         .wrap_err("Failed to load GLTF scene.")?;
 
-    let mesh_triangles =
-        collect_mesh_triangles(&gltf_scene).wrap_err("Failed to collect triangles from scene.")?;
-
-    println!("Loaded {} triangles.", mesh_triangles.len());
-
-    let minimum_voxelization_aabb = compute_minimum_aabb_for_mesh(&mesh_triangles, 1.0);
-
-    println!(
-        "Minimum AABB for voxelization is from ({}, {}, {}) to ({}, {}, {})",
-        minimum_voxelization_aabb.min.x,
-        minimum_voxelization_aabb.min.y,
-        minimum_voxelization_aabb.min.z,
-        minimum_voxelization_aabb.max.x,
-        minimum_voxelization_aabb.max.y,
-        minimum_voxelization_aabb.max.z,
-    );
-
 
     let time_voxelization_start = Instant::now();
 
-    let voxel_grid = voxelize_triangles(
-        mesh_triangles,
-        minimum_voxelization_aabb,
+    let voxelized_models = voxelize_models(
+        &gltf_scene.models,
+        voxelizer::aabb::Aabb {
+            min: GlamVec3::new(-20.0, -20.0, -20.0),
+            max: GlamVec3::new(20.0, 20.0, 20.0),
+        },
         cli_args.voxel_size,
     );
 
@@ -198,8 +159,9 @@ fn main() -> Result<()> {
         .insert_resource(OriginalSceneInfo {
             scene_path: cli_args.input_file_path.to_string_lossy().to_string(),
         })
-        .insert_resource(VoxelizedMesh {
-            voxel_grid,
+        .insert_resource(VoxelizedScene {
+            voxelized_models,
+            voxel_size: cli_args.voxel_size,
             is_visible: false,
         })
         .add_systems(Startup, (set_up_scene, set_up_volume))
@@ -223,8 +185,9 @@ pub struct OriginalSceneInfo {
 
 
 #[derive(Resource)]
-pub struct VoxelizedMesh {
-    pub voxel_grid: VoxelGrid,
+pub struct VoxelizedScene {
+    pub voxelized_models: Vec<ContextualVoxelGrid>,
+    pub voxel_size: f32,
     pub is_visible: bool,
 }
 
@@ -264,64 +227,99 @@ fn set_up_scene(
 #[derive(Component)]
 pub struct VoxelMarker;
 
+#[derive(Component)]
+pub struct VoxelEdgeMarker;
+
+#[derive(Component)]
+pub struct VoxelInsideMeshMarker;
+
 
 fn set_up_volume(
     mut commands: Commands,
-    mut voxelized_mesh: ResMut<VoxelizedMesh>,
+    mut voxelized_scene: ResMut<VoxelizedScene>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut standard_materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let box_mesh_handle = meshes.add(Cuboid::from_size(Vec3::splat(
-        (voxelized_mesh.voxel_grid.voxel_half_extent * 2.0) * 0.95,
+        voxelized_scene.voxel_size * 0.95,
     )));
 
+    let box_inside_mesh_material = standard_materials.add(Color::SEA_GREEN);
 
-    let box_mesh_material = standard_materials.add(Color::GRAY);
 
-    for voxel in voxelized_mesh.voxel_grid.voxels() {
-        if !voxel.is_filled {
-            continue;
+    for voxelized_model in &voxelized_scene.voxelized_models {
+        for contextual_voxel in voxelized_model.grid.contextual_voxels() {
+            match contextual_voxel.data {
+                VoxelData::Empty => {}
+                VoxelData::Edge { base_color } => {
+                    let voxel_position_in_world_space =
+                        contextual_voxel.center_coordinate_in_world_space();
+
+                    // DEBUGONLY
+                    // println!(
+                    //     "Got edge voxel at ({}, {}, {})",
+                    //     voxel_position_in_world_space.x,
+                    //     voxel_position_in_world_space.y,
+                    //     voxel_position_in_world_space.z,
+                    // );
+
+                    let voxel_transform = Transform::from_translation(Vec3::new(
+                        voxel_position_in_world_space.x,
+                        voxel_position_in_world_space.y,
+                        voxel_position_in_world_space.z,
+                    ));
+
+
+                    commands.spawn((
+                        PbrBundle {
+                            mesh: box_mesh_handle.clone(),
+                            material: standard_materials.add(Color::rgb(
+                                base_color.x,
+                                base_color.y,
+                                base_color.z,
+                            )),
+                            transform: voxel_transform,
+                            visibility: Visibility::Hidden,
+                            ..Default::default()
+                        },
+                        VoxelMarker,
+                        VoxelEdgeMarker,
+                    ));
+                }
+                VoxelData::InsideMesh => {
+                    let voxel_position_in_world_space =
+                        contextual_voxel.center_coordinate_in_world_space();
+
+                    let voxel_transform = Transform::from_translation(Vec3::new(
+                        voxel_position_in_world_space.x,
+                        voxel_position_in_world_space.y,
+                        voxel_position_in_world_space.z,
+                    ));
+
+
+                    commands.spawn((
+                        PbrBundle {
+                            mesh: box_mesh_handle.clone(),
+                            material: box_inside_mesh_material.clone(),
+                            transform: voxel_transform,
+                            visibility: Visibility::Hidden,
+                            ..Default::default()
+                        },
+                        VoxelMarker,
+                        VoxelInsideMeshMarker,
+                    ));
+                }
+            }
         }
-
-
-        let voxel_position_in_world_space = voxel.center_coordinate_in_world_space(
-            &voxelized_mesh.voxel_grid.starting_point,
-            voxelized_mesh.voxel_grid.voxel_half_extent,
-        );
-
-        let voxel_transform = Transform::from_translation(Vec3::new(
-            voxel_position_in_world_space.x,
-            voxel_position_in_world_space.y,
-            voxel_position_in_world_space.z,
-        ));
-
-        trace!(
-            "Generating voxel at ({}, {}, {}).",
-            voxel_position_in_world_space.x,
-            voxel_position_in_world_space.y,
-            voxel_position_in_world_space.z,
-        );
-
-
-        commands.spawn((
-            PbrBundle {
-                mesh: box_mesh_handle.clone(),
-                material: box_mesh_material.clone(),
-                transform: voxel_transform,
-                visibility: Visibility::Hidden,
-                ..Default::default()
-            },
-            VoxelMarker,
-        ));
     }
 
-    voxelized_mesh.is_visible = false;
+    voxelized_scene.is_visible = false;
 }
 
 
 fn handle_user_input_for_volume_visibility_toggle(
     key_input: Res<ButtonInput<KeyCode>>,
-    mut voxelized_mesh: ResMut<VoxelizedMesh>,
+    mut voxelized_mesh: ResMut<VoxelizedScene>,
     mut voxels: Query<&mut Visibility, With<VoxelMarker>>,
     mut meshes: Query<&mut Visibility, (With<Handle<Mesh>>, Without<VoxelMarker>)>,
 ) {
