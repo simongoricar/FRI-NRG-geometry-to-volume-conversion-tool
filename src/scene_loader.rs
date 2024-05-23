@@ -4,8 +4,9 @@
 use bevy::{asset::LoadState, gltf::Gltf, prelude::*, scene::InstanceId};
 
 
+
 #[derive(Resource)]
-pub struct SceneHandle {
+pub struct GltfSceneHandle {
     pub gltf_handle: Handle<Gltf>,
 
     scene_index: usize,
@@ -17,7 +18,7 @@ pub struct SceneHandle {
     pub has_light: bool,
 }
 
-impl SceneHandle {
+impl GltfSceneHandle {
     pub fn new(gltf_handle: Handle<Gltf>, scene_index: usize) -> Self {
         Self {
             gltf_handle,
@@ -30,31 +31,39 @@ impl SceneHandle {
 }
 
 
+
 pub struct GltfSceneLoaderPlugin;
 
 impl Plugin for GltfSceneLoaderPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(PreUpdate, scene_load_check);
+        app.add_systems(PreUpdate, handle_gltf_scene_load);
     }
 }
 
-fn scene_load_check(
+
+/// This system checks if the GLTF scene contained in the [`SceneHandle`] resource
+/// has been loaded. Once it has, this system computes some secondary properties,
+/// and finally spawns the scene into the world.
+///
+/// Once the scene is loaded and spawned, [`SceneHandle::instance_id`] is no longer None,
+/// and [`SceneHandle::is_loaded`] is set to `true`.
+fn handle_gltf_scene_load(
     asset_server: Res<AssetServer>,
-    mut scenes: ResMut<Assets<Scene>>,
+    mut scene_assets: ResMut<Assets<Scene>>,
     gltf_assets: Res<Assets<Gltf>>,
-    mut scene_handle: ResMut<SceneHandle>,
+    mut gltf_scene_resource: ResMut<GltfSceneHandle>,
     mut scene_spawner: ResMut<SceneSpawner>,
 ) {
-    if let Some(scene_instance_id) = scene_handle.instance_id {
-        if !scene_handle.is_loaded && scene_spawner.instance_is_ready(scene_instance_id) {
+    if let Some(scene_instance_id) = gltf_scene_resource.instance_id {
+        if !gltf_scene_resource.is_loaded && scene_spawner.instance_is_ready(scene_instance_id) {
             info!("GLTF scene is ready!");
-            scene_handle.is_loaded = true;
+            gltf_scene_resource.is_loaded = true;
         }
 
         return;
     }
 
-    if asset_server.load_state(&scene_handle.gltf_handle) != LoadState::Loaded {
+    if asset_server.load_state(&gltf_scene_resource.gltf_handle) != LoadState::Loaded {
         return;
     }
 
@@ -62,7 +71,7 @@ fn scene_load_check(
 
 
     let gltf_data = gltf_assets
-        .get(&scene_handle.gltf_handle)
+        .get(&gltf_scene_resource.gltf_handle)
         .expect("failed to obtain reference to GLTF scene from assert handle");
 
     if gltf_data.scenes.len() > 1 {
@@ -72,34 +81,34 @@ fn scene_load_check(
 
     let gltf_scene_handle = gltf_data
         .scenes
-        .get(scene_handle.scene_index)
+        .get(gltf_scene_resource.scene_index)
         .unwrap_or_else(|| {
             panic!(
                 "glTF file doesn't contain scene {}!",
-                scene_handle.scene_index
+                gltf_scene_resource.scene_index
             )
         });
 
-    let gltf_scene = scenes.get_mut(gltf_scene_handle).unwrap();
+    let gltf_scene = scene_assets.get_mut(gltf_scene_handle).unwrap();
 
 
     let mut query = gltf_scene
         .world
         .query::<(Option<&DirectionalLight>, Option<&PointLight>)>();
 
-    scene_handle.has_light =
+    gltf_scene_resource.has_light =
         query
             .iter(&gltf_scene.world)
             .any(|(maybe_directional_light, maybe_point_light)| {
                 maybe_directional_light.is_some() || maybe_point_light.is_some()
             });
 
-    if scene_handle.has_light {
+    if gltf_scene_resource.has_light {
         info!("Scene already has light.");
     } else {
         info!("Scene does not have a light.");
     }
 
     info!("Spawning scene.");
-    scene_handle.instance_id = Some(scene_spawner.spawn(gltf_scene_handle.clone_weak()));
+    gltf_scene_resource.instance_id = Some(scene_spawner.spawn(gltf_scene_handle.clone_weak()));
 }

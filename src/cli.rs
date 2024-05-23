@@ -14,5 +14,8 @@ pub struct CliArgs {
 
     #[arg(short = 'i', long = "input-file-path")]
     pub input_file_path: PathBuf,
+
+    #[arg(short = 's', long = "voxel-size")]
+    pub voxel_size: f32,
     // TODO
 }

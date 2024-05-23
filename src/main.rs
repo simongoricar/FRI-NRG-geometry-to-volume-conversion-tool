@@ -1,4 +1,9 @@
-use std::{path::Path, str::FromStr, time::Instant};
+use std::{
+    ops::{Add, Sub},
+    path::Path,
+    str::FromStr,
+    time::Instant,
+};
 
 use bevy::{
     app::{App, PreUpdate},
@@ -39,10 +44,10 @@ use bevy::{
 };
 use clap::Parser;
 use easy_gltf::model::Triangle;
+use glam::Vec3 as GlamVec3;
 use miette::{miette, Context, IntoDiagnostic, Result};
-use nalgebra::Vector3;
-use scene_loader::{GltfSceneLoaderPlugin, SceneHandle};
-use tracing::{info, warn};
+use scene_loader::{GltfSceneHandle, GltfSceneLoaderPlugin};
+use tracing::{info, trace, warn};
 use tracing_subscriber::EnvFilter;
 use voxelizer::VoxelGrid;
 
@@ -53,7 +58,6 @@ use crate::{
     voxelizer::{voxelize_triangles, Aabb},
 };
 
-// #![allow(clippy::type_complexity)]
 
 mod camera_controller;
 mod cli;
@@ -91,6 +95,29 @@ fn collect_mesh_triangles(gltf_scene: &easy_gltf::Scene) -> Result<Vec<Triangle>
 }
 
 
+fn compute_minimum_aabb_for_mesh(mesh_triangles: &[Triangle], padding: f32) -> Aabb {
+    let mut current_minimum = GlamVec3::MAX;
+    let mut current_maximum = GlamVec3::MIN;
+
+    for triangle in mesh_triangles {
+        for vertex in triangle {
+            current_minimum.x = current_minimum.x.min(vertex.position.x);
+            current_minimum.y = current_minimum.y.min(vertex.position.y);
+            current_minimum.z = current_minimum.z.min(vertex.position.z);
+
+            current_maximum.x = current_maximum.x.max(vertex.position.x);
+            current_maximum.y = current_maximum.y.max(vertex.position.y);
+            current_maximum.z = current_maximum.z.max(vertex.position.z);
+        }
+    }
+
+    Aabb::from_min_and_max(
+        current_minimum.sub(padding),
+        current_maximum.add(padding),
+    )
+}
+
+
 
 fn main() -> Result<()> {
     let cli_args = CliArgs::parse();
@@ -108,7 +135,7 @@ fn main() -> Result<()> {
 
     let logging_guard = initialize_tracing(
         console_logging_output_level_filter,
-        EnvFilter::from_str("error").unwrap(),
+        EnvFilter::from_str("warn").unwrap(),
         "logs",
         "nrg-m2v",
     );
@@ -122,17 +149,29 @@ fn main() -> Result<()> {
 
     println!("Loaded {} triangles.", mesh_triangles.len());
 
+    let minimum_voxelization_aabb = compute_minimum_aabb_for_mesh(&mesh_triangles, 1.0);
+
+    println!(
+        "Minimum AABB for voxelization is from ({}, {}, {}) to ({}, {}, {})",
+        minimum_voxelization_aabb.min.x,
+        minimum_voxelization_aabb.min.y,
+        minimum_voxelization_aabb.min.z,
+        minimum_voxelization_aabb.max.x,
+        minimum_voxelization_aabb.max.y,
+        minimum_voxelization_aabb.max.z,
+    );
+
 
     let time_voxelization_start = Instant::now();
+
     let voxel_grid = voxelize_triangles(
         mesh_triangles,
-        Aabb {
-            min: Vector3::new(-3.0, -3.0, -3.0),
-            max: Vector3::new(3.0, 3.0, 3.0),
-        },
-        0.5,
+        minimum_voxelization_aabb,
+        cli_args.voxel_size,
     );
+
     let time_voxelization_total = time_voxelization_start.elapsed();
+
 
     println!(
         "Voxelization complete in {:.1} seconds, starting visualization.",
@@ -215,7 +254,7 @@ fn set_up_scene(
 ) {
     let (file_path, scene_index) = parse_scene_path(&original_mesh.scene_path);
 
-    commands.insert_resource(SceneHandle::new(
+    commands.insert_resource(GltfSceneHandle::new(
         asset_server.load(file_path),
         scene_index,
     ));
@@ -233,10 +272,11 @@ fn set_up_volume(
     mut standard_materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let box_mesh_handle = meshes.add(Cuboid::from_size(Vec3::splat(
-        voxelized_mesh.voxel_grid.voxel_half_size * 2.0,
+        (voxelized_mesh.voxel_grid.voxel_half_extent * 2.0) * 0.95,
     )));
 
-    let box_mesh_material = standard_materials.add(Color::rgb(1.0, 0.5, 1.0));
+
+    let box_mesh_material = standard_materials.add(Color::GRAY);
 
     for voxel in voxelized_mesh.voxel_grid.voxels() {
         if !voxel.is_filled {
@@ -244,31 +284,29 @@ fn set_up_volume(
         }
 
 
-        let voxel_position_in_world_space = voxel.get_center_coordinate_in_world_space(
+        let voxel_position_in_world_space = voxel.center_coordinate_in_world_space(
             &voxelized_mesh.voxel_grid.starting_point,
-            voxelized_mesh.voxel_grid.voxel_half_size,
+            voxelized_mesh.voxel_grid.voxel_half_extent,
         );
 
         let voxel_transform = Transform::from_translation(Vec3::new(
             voxel_position_in_world_space.x,
             voxel_position_in_world_space.y,
             voxel_position_in_world_space.z,
-        ))
-        .with_scale(Vec3::splat(
-            voxelized_mesh.voxel_grid.voxel_half_size * 2.0,
         ));
 
-        info!(
+        trace!(
             "Generating voxel at ({}, {}, {}).",
             voxel_position_in_world_space.x,
             voxel_position_in_world_space.y,
             voxel_position_in_world_space.z,
         );
 
+
         commands.spawn((
             PbrBundle {
-                mesh: box_mesh_handle.clone_weak(),
-                material: box_mesh_material.clone_weak(),
+                mesh: box_mesh_handle.clone(),
+                material: box_mesh_material.clone(),
                 transform: voxel_transform,
                 visibility: Visibility::Hidden,
                 ..Default::default()
@@ -292,6 +330,7 @@ fn handle_user_input_for_volume_visibility_toggle(
     }
 
     voxelized_mesh.is_visible = !voxelized_mesh.is_visible;
+    info!("is_visible = {}", voxelized_mesh.is_visible);
 
     let updated_voxel_visibility = match voxelized_mesh.is_visible {
         true => Visibility::Visible,
@@ -315,10 +354,11 @@ fn handle_user_input_for_volume_visibility_toggle(
 }
 
 
+#[allow(clippy::type_complexity)]
 fn set_up_scene_after_load(
     mut commands: Commands,
     mut scene_has_been_set_up: Local<bool>,
-    mut scene_handle: ResMut<SceneHandle>,
+    mut scene_handle: ResMut<GltfSceneHandle>,
     meshes: Query<Option<&BevyAabb>, (With<Handle<Mesh>>, Without<VoxelMarker>)>,
 ) {
     if scene_handle.is_loaded && !*scene_has_been_set_up {
@@ -404,7 +444,11 @@ fn set_up_scene_after_load(
             info!("Spawning a directional light, because the scene does not have one.");
 
             commands.spawn(DirectionalLightBundle {
-                transform: Transform::from_xyz(3.0, 4.0, 4.0).looking_at(Vec3::ZERO, Vec3::Y),
+                directional_light: DirectionalLight {
+                    shadows_enabled: true,
+                    ..Default::default()
+                },
+                transform: camera_transform.looking_at(Vec3::from(scene_aabb.center), Vec3::Y),
                 ..Default::default()
             });
 
