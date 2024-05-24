@@ -15,8 +15,8 @@ use parry3d::{
 
 use self::{
     aabb::Aabb,
-    grid::{ContextualVoxelGrid, VoxelGrid},
-    voxel::VoxelData,
+    grid::{ContextualVoxelGrid, NonFinalVoxelGrid},
+    voxel::NonFinalVoxelData,
 };
 
 pub mod aabb;
@@ -92,7 +92,10 @@ fn check_box_triangle_collision(triangle: &[Vertex; 3], aabb: &Aabb) -> bool {
 } */
 
 
-fn initialize_voxel_grid(voxelization_bounds: &Aabb, voxel_full_size: f32) -> VoxelGrid {
+fn initialize_voxel_work_grid(
+    voxelization_bounds: &Aabb,
+    voxel_full_size: f32,
+) -> NonFinalVoxelGrid {
     let num_voxels_on_x =
         (voxelization_bounds.max.x - voxelization_bounds.min.x).div(voxel_full_size) as u64;
     let num_voxels_on_y =
@@ -100,7 +103,7 @@ fn initialize_voxel_grid(voxelization_bounds: &Aabb, voxel_full_size: f32) -> Vo
     let num_voxels_on_z =
         (voxelization_bounds.max.z - voxelization_bounds.min.z).div(voxel_full_size) as u64;
 
-    VoxelGrid::new(
+    NonFinalVoxelGrid::new(
         voxelization_bounds.min,
         voxel_full_size / 2.0,
         num_voxels_on_x,
@@ -289,7 +292,7 @@ fn voxelize_individual_model(
         minimum_voxelization_bounds_to_cover_model.compute_intersection(max_voxelization_bounds);
 
 
-    let mut voxel_grid = initialize_voxel_grid(&actual_voxelization_bounds, voxel_size);
+    let mut voxel_grid = initialize_voxel_work_grid(&actual_voxelization_bounds, voxel_size);
 
 
     let model_material = model.material();
@@ -329,11 +332,12 @@ fn voxelize_individual_model(
         for grid_index_x in index_x_start..(index_x_start + index_x_num) {
             for grid_index_y in index_y_start..(index_y_start + index_y_num) {
                 for grid_index_z in index_z_start..(index_z_start + index_z_num) {
-                    let target_voxel = voxel_grid.contextual_voxel_mut_by_xyz_index_unchecked(
-                        grid_index_x,
-                        grid_index_y,
-                        grid_index_z,
-                    );
+                    let target_voxel = voxel_grid
+                        .contextual_non_final_voxel_mut_by_xyz_index_unchecked(
+                            grid_index_x,
+                            grid_index_y,
+                            grid_index_z,
+                        );
 
                     let target_voxel_center = target_voxel.center_coordinate_in_world_space();
                     let target_voxel_aabb = target_voxel.aabb();
@@ -357,9 +361,18 @@ fn voxelize_individual_model(
                             target_voxel_center,
                         );
 
-                        *target_voxel.data = VoxelData::Edge {
-                            base_color: sampled_base_color,
-                        };
+                        match target_voxel.data {
+                            NonFinalVoxelData::Empty | NonFinalVoxelData::InsideMesh => {
+                                *target_voxel.data = NonFinalVoxelData::Edge {
+                                    base_color_or_texture_samples: vec![sampled_base_color],
+                                }
+                            }
+                            NonFinalVoxelData::Edge {
+                                base_color_or_texture_samples: base_color_samples,
+                            } => {
+                                base_color_samples.push(sampled_base_color);
+                            }
+                        }
                     }
                 }
             }
@@ -369,7 +382,7 @@ fn voxelize_individual_model(
 
     ContextualVoxelGrid {
         gltf_model_primitive_index: model.primitive_index(),
-        grid: voxel_grid,
+        grid: voxel_grid.into_final_grid(),
     }
 }
 

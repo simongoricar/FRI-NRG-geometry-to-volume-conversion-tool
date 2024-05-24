@@ -5,16 +5,16 @@ use glam::{U64Vec3, Vec3};
 use super::aabb::Aabb;
 
 #[derive(Debug)]
-pub struct ContextualVoxelDataMut<'d> {
+pub struct ContextualNonFinalVoxelDataMut<'d> {
     pub grid_index: U64Vec3,
 
     grid_starting_point: Vec3,
     grid_voxel_half_extent: f32,
 
-    pub data: &'d mut VoxelData,
+    pub data: &'d mut NonFinalVoxelData,
 }
 
-impl<'d> ContextualVoxelDataMut<'d> {
+impl<'d> ContextualNonFinalVoxelDataMut<'d> {
     pub fn center_coordinate_in_world_space(&self) -> Vec3 {
         let first_voxel_center = self.grid_starting_point.add(self.grid_voxel_half_extent);
         let full_voxel_extent = self.grid_voxel_half_extent * 2.0;
@@ -68,6 +68,79 @@ impl<'d> ContextualVoxelData<'d> {
 }
 
 
+#[inline]
+fn combine_rgb_colors(colors_to_compose: &[Vec3]) -> Vec3 {
+    // Colors returned by the gltf crate's material sampler are linear RGB, see
+    // <https://docs.rs/easy-gltf/latest/src/easy_gltf/scene/model/material/mod.rs.html#49-66>.
+
+    // let first_color = LinSrgb::new(first_color.x, first_color.y, first_color.z);
+    // let second_color = LinSrgb::new(second_color.x, second_color.y, second_color.z);
+
+    let mut mixed_r: f32 = 0.0;
+    let mut mixed_g: f32 = 0.0;
+    let mut mixed_b: f32 = 0.0;
+
+    for color in colors_to_compose {
+        mixed_r += color.x.powi(2);
+        mixed_g += color.y.powi(2);
+        mixed_b += color.z.powi(2);
+    }
+
+    let mixed_r = (mixed_r / (colors_to_compose.len() as f32)).sqrt();
+    let mixed_g = (mixed_g / (colors_to_compose.len() as f32)).sqrt();
+    let mixed_b = (mixed_b / (colors_to_compose.len() as f32)).sqrt();
+
+    Vec3::new(mixed_r, mixed_g, mixed_b)
+}
+
+
+#[derive(Clone, Debug)]
+pub enum NonFinalVoxelData {
+    Empty,
+    Edge {
+        base_color_or_texture_samples: Vec<Vec3>,
+        // metallic_value_samples: Vec<f32>,
+        // roughness_value_samples: Vec<f32>,
+        //
+    },
+    InsideMesh,
+}
+
+impl NonFinalVoxelData {
+    #[inline]
+    pub fn new_empty() -> Self {
+        Self::Empty
+    }
+
+    #[inline]
+    pub fn as_contextual_mut(
+        &mut self,
+        grid_starting_point: Vec3,
+        grid_voxel_half_extent: f32,
+        grid_index: U64Vec3,
+    ) -> ContextualNonFinalVoxelDataMut<'_> {
+        ContextualNonFinalVoxelDataMut {
+            grid_index,
+            grid_starting_point,
+            grid_voxel_half_extent,
+            data: self,
+        }
+    }
+
+    pub fn into_final_voxel_data(self) -> VoxelData {
+        match self {
+            NonFinalVoxelData::Empty => VoxelData::Empty,
+            NonFinalVoxelData::Edge {
+                base_color_or_texture_samples: base_color_samples,
+            } => VoxelData::Edge {
+                base_color: combine_rgb_colors(&base_color_samples),
+            },
+            NonFinalVoxelData::InsideMesh => VoxelData::InsideMesh,
+        }
+    }
+}
+
+
 
 #[derive(Clone, Debug)]
 pub enum VoxelData {
@@ -78,11 +151,6 @@ pub enum VoxelData {
 
 impl VoxelData {
     #[inline]
-    pub fn new_empty() -> Self {
-        Self::Empty
-    }
-
-    #[inline]
     pub fn as_contextual(
         &self,
         grid_starting_point: Vec3,
@@ -90,21 +158,6 @@ impl VoxelData {
         grid_index: U64Vec3,
     ) -> ContextualVoxelData<'_> {
         ContextualVoxelData {
-            grid_index,
-            grid_starting_point,
-            grid_voxel_half_extent,
-            data: self,
-        }
-    }
-
-    #[inline]
-    pub fn as_contextual_mut(
-        &mut self,
-        grid_starting_point: Vec3,
-        grid_voxel_half_extent: f32,
-        grid_index: U64Vec3,
-    ) -> ContextualVoxelDataMut<'_> {
-        ContextualVoxelDataMut {
             grid_index,
             grid_starting_point,
             grid_voxel_half_extent,

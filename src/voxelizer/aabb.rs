@@ -12,6 +12,7 @@ impl Aabb {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn center(&self) -> Vec3 {
         Vec3::new(
             (self.max.x + self.min.x) / 2.0,
@@ -21,6 +22,7 @@ impl Aabb {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn half_reach(&self) -> Vec3 {
         Vec3::new(
             (self.max.x - self.min.x) / 2.0,
