@@ -69,6 +69,12 @@ impl<'d> ContextualVoxelData<'d> {
 
 
 #[inline]
+fn average_f32_samples(samples: &[f32]) -> f32 {
+    samples.iter().sum::<f32>() / (samples.len() as f32)
+}
+
+
+#[inline]
 fn combine_rgb_colors(colors_to_compose: &[Vec3]) -> Vec3 {
     // Colors returned by the gltf crate's material sampler are linear RGB, see
     // <https://docs.rs/easy-gltf/latest/src/easy_gltf/scene/model/material/mod.rs.html#49-66>.
@@ -99,9 +105,8 @@ pub enum NonFinalVoxelData {
     Empty,
     Edge {
         base_color_or_texture_samples: Vec<Vec3>,
-        // metallic_value_samples: Vec<f32>,
-        // roughness_value_samples: Vec<f32>,
-        //
+        metallic_value_samples: Vec<f32>,
+        roughness_value_samples: Vec<f32>,
     },
     InsideMesh,
 }
@@ -131,9 +136,13 @@ impl NonFinalVoxelData {
         match self {
             NonFinalVoxelData::Empty => VoxelData::Empty,
             NonFinalVoxelData::Edge {
-                base_color_or_texture_samples: base_color_samples,
+                base_color_or_texture_samples,
+                metallic_value_samples,
+                roughness_value_samples,
             } => VoxelData::Edge {
-                base_color: combine_rgb_colors(&base_color_samples),
+                color: combine_rgb_colors(&base_color_or_texture_samples),
+                metallic_value: average_f32_samples(&metallic_value_samples),
+                rougness_value: average_f32_samples(&roughness_value_samples),
             },
             NonFinalVoxelData::InsideMesh => VoxelData::InsideMesh,
         }
@@ -145,7 +154,11 @@ impl NonFinalVoxelData {
 #[derive(Clone, Debug)]
 pub enum VoxelData {
     Empty,
-    Edge { base_color: Vec3 },
+    Edge {
+        color: Vec3,
+        metallic_value: f32,
+        rougness_value: f32,
+    },
     InsideMesh,
 }
 

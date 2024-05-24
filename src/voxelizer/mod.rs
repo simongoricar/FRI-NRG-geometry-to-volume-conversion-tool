@@ -226,11 +226,7 @@ fn compute_minimum_aabb_for_mesh(mesh_triangles: &[Triangle], padding: f32) -> A
 }
 
 
-fn sample_closest_vertex_color(
-    triangle: &[Vertex; 3],
-    model_material: &Material,
-    target_voxel_center: Vec3,
-) -> Vec3 {
+fn get_closest_vertex(triangle: &[Vertex; 3], target_voxel_center: Vec3) -> &Vertex {
     // Choose closest vertex and sample its color.
     let vertex_one_distance = target_voxel_center.distance(Vec3::new(
         triangle[0].position.x,
@@ -238,7 +234,7 @@ fn sample_closest_vertex_color(
         triangle[0].position.z,
     ));
 
-    let mut closest_vertex_tex_coord = triangle[0].tex_coords;
+    let mut closest_vertex = &triangle[0];
     let mut closest_vertex_distance = vertex_one_distance;
 
 
@@ -250,7 +246,7 @@ fn sample_closest_vertex_color(
 
     if vertex_two_distance < closest_vertex_distance {
         closest_vertex_distance = vertex_two_distance;
-        closest_vertex_tex_coord = triangle[1].tex_coords;
+        closest_vertex = &triangle[1];
     }
 
 
@@ -262,11 +258,16 @@ fn sample_closest_vertex_color(
 
     if vertex_three_distance < closest_vertex_distance {
         // closest_vertex_distance = vertex_three_distance;
-        closest_vertex_tex_coord = triangle[2].tex_coords;
+        closest_vertex = &triangle[2];
     }
 
+    closest_vertex
+}
 
-    let sampled_color = model_material.get_base_color(closest_vertex_tex_coord);
+
+#[inline]
+fn sample_vertex_color(vertex: &Vertex, model_material: &Material) -> Vec3 {
+    let sampled_color = model_material.get_base_color(vertex.tex_coords);
 
     Vec3::new(sampled_color.x, sampled_color.y, sampled_color.z)
 }
@@ -354,23 +355,31 @@ fn voxelize_individual_model(
                         //     target_voxel_center.x, target_voxel_center.y, target_voxel_center.z,
                         // );
 
-                        // Sample base color.
-                        let sampled_base_color = sample_closest_vertex_color(
-                            &triangle,
-                            &model_material,
-                            target_voxel_center,
-                        );
+                        let best_vertex = get_closest_vertex(&triangle, target_voxel_center);
+
+                        let sampled_color = sample_vertex_color(best_vertex, &model_material);
+                        let sampled_metallic_value =
+                            model_material.get_metallic(best_vertex.tex_coords);
+                        let sampled_roughness_value =
+                            model_material.get_roughness(best_vertex.tex_coords);
+
 
                         match target_voxel.data {
                             NonFinalVoxelData::Empty | NonFinalVoxelData::InsideMesh => {
                                 *target_voxel.data = NonFinalVoxelData::Edge {
-                                    base_color_or_texture_samples: vec![sampled_base_color],
+                                    base_color_or_texture_samples: vec![sampled_color],
+                                    metallic_value_samples: vec![sampled_metallic_value],
+                                    roughness_value_samples: vec![sampled_roughness_value],
                                 }
                             }
                             NonFinalVoxelData::Edge {
-                                base_color_or_texture_samples: base_color_samples,
+                                base_color_or_texture_samples,
+                                metallic_value_samples,
+                                roughness_value_samples,
                             } => {
-                                base_color_samples.push(sampled_base_color);
+                                base_color_or_texture_samples.push(sampled_color);
+                                metallic_value_samples.push(sampled_metallic_value);
+                                roughness_value_samples.push(sampled_roughness_value);
                             }
                         }
                     }

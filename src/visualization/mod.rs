@@ -15,9 +15,11 @@ use bevy::{
         AssetPlugin,
         AssetServer,
         Assets,
+        BuildChildren,
         Color,
         Component,
         Cuboid,
+        InheritedVisibility,
         PluginGroup,
         Projection,
         Res,
@@ -25,6 +27,7 @@ use bevy::{
         StandardMaterial,
         Startup,
         Transform,
+        TransformBundle,
         Update,
         Vec3,
         Visibility,
@@ -127,6 +130,14 @@ fn set_up_scene(
 }
 
 
+
+#[derive(Component)]
+pub struct VoxelEdgeParentMarker;
+
+#[derive(Component)]
+pub struct VoxelInsideMeshParentMarker;
+
+
 #[derive(Component)]
 pub struct VoxelMarker;
 
@@ -150,11 +161,32 @@ fn set_up_volume(
     let box_inside_mesh_material = standard_materials.add(Color::SEA_GREEN);
 
 
+
+    let voxel_edge_parent_entity = commands
+        .spawn((
+            VoxelEdgeParentMarker,
+            Visibility::Hidden,
+            InheritedVisibility::VISIBLE,
+            TransformBundle::IDENTITY,
+        ))
+        .id();
+
+    let voxel_inside_mesh_parent_entity = commands
+        .spawn((
+            VoxelInsideMeshParentMarker,
+            Visibility::Hidden,
+            InheritedVisibility::VISIBLE,
+            TransformBundle::IDENTITY,
+        ))
+        .id();
+
+
+
     for voxelized_model in &voxelized_scene.voxelized_models {
         for contextual_voxel in voxelized_model.grid.contextual_voxels() {
             match contextual_voxel.data {
                 VoxelData::Empty => {}
-                VoxelData::Edge { base_color } => {
+                VoxelData::Edge { color, .. } => {
                     let voxel_position_in_world_space =
                         contextual_voxel.center_coordinate_in_world_space();
 
@@ -173,21 +205,27 @@ fn set_up_volume(
                     ));
 
 
-                    commands.spawn((
-                        PbrBundle {
-                            mesh: box_mesh_handle.clone(),
-                            material: standard_materials.add(Color::rgb(
-                                base_color.x,
-                                base_color.y,
-                                base_color.z,
-                            )),
-                            transform: voxel_transform,
-                            visibility: Visibility::Hidden,
-                            ..Default::default()
-                        },
-                        VoxelMarker,
-                        VoxelEdgeMarker,
-                    ));
+                    let color_asset = standard_materials.add(StandardMaterial {
+                        base_color: Color::rgb_linear(color.x, color.y, color.z),
+                        // metallic: *metallic_value,
+                        // perceptual_roughness: *rougness_value,
+                        ..Default::default()
+                    });
+
+
+                    commands
+                        .spawn((
+                            PbrBundle {
+                                mesh: box_mesh_handle.clone(),
+                                material: color_asset,
+                                transform: voxel_transform,
+                                visibility: Visibility::Inherited,
+                                ..Default::default()
+                            },
+                            VoxelMarker,
+                            VoxelEdgeMarker,
+                        ))
+                        .set_parent(voxel_edge_parent_entity);
                 }
                 VoxelData::InsideMesh => {
                     let voxel_position_in_world_space =
@@ -200,17 +238,19 @@ fn set_up_volume(
                     ));
 
 
-                    commands.spawn((
-                        PbrBundle {
-                            mesh: box_mesh_handle.clone(),
-                            material: box_inside_mesh_material.clone(),
-                            transform: voxel_transform,
-                            visibility: Visibility::Hidden,
-                            ..Default::default()
-                        },
-                        VoxelMarker,
-                        VoxelInsideMeshMarker,
-                    ));
+                    commands
+                        .spawn((
+                            PbrBundle {
+                                mesh: box_mesh_handle.clone(),
+                                material: box_inside_mesh_material.clone(),
+                                transform: voxel_transform,
+                                visibility: Visibility::Inherited,
+                                ..Default::default()
+                            },
+                            VoxelMarker,
+                            VoxelInsideMeshMarker,
+                        ))
+                        .set_parent(voxel_inside_mesh_parent_entity);
                 }
             }
         }
@@ -223,8 +263,11 @@ fn set_up_volume(
 fn handle_user_input_for_volume_visibility_toggle(
     key_input: Res<ButtonInput<KeyCode>>,
     mut voxelized_mesh: ResMut<VoxelizedScene>,
-    mut mesh_edge_voxels: Query<&mut Visibility, (With<VoxelMarker>, With<VoxelEdgeMarker>)>,
-    mut meshes: Query<&mut Visibility, (With<Handle<Mesh>>, Without<VoxelMarker>)>,
+    mut mesh_edge_parent_entity: Query<
+        &mut Visibility,
+        (With<VoxelEdgeParentMarker>, Without<Handle<Mesh>>),
+    >,
+    mut meshes: Query<&mut Visibility, (With<Handle<Mesh>>, Without<VoxelEdgeParentMarker>)>,
 ) {
     if !key_input.just_pressed(KeyCode::KeyV) {
         return;
@@ -245,9 +288,14 @@ fn handle_user_input_for_volume_visibility_toggle(
 
     info!("Toggling volume visibility (voxels now {updated_voxel_visibility:?}).");
 
-    for mut voxel_visiblity in mesh_edge_voxels.iter_mut() {
-        *voxel_visiblity = updated_voxel_visibility;
-    }
+    // for mut voxel_visiblity in mesh_edge_voxels.iter_mut() {
+    //    *voxel_visiblity = updated_voxel_visibility;
+    // }
+
+    // FIXME this doesn't toggle properly
+    let mut voxel_edge_visibility = mesh_edge_parent_entity.single_mut();
+    *voxel_edge_visibility = updated_voxel_visibility;
+
 
     for mut mesh_visibility in meshes.iter_mut() {
         *mesh_visibility = updated_mesh_visibility;

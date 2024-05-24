@@ -1,10 +1,62 @@
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Args, Parser, Subcommand};
 use glam::Vec3;
 use miette::{miette, Context, IntoDiagnostic, Result};
 
-use crate::voxelizer::aabb::Aabb;
+use crate::{exporter::VoxelExportType, voxelizer::aabb::Aabb};
+
+
+#[cfg(feature = "visualization")]
+#[derive(Args)]
+pub struct VisualizationArgs {
+    #[arg(
+        long = "visualization-voxel-size",
+        help = "Voxel size (full box width) to use for the visualization of the voxelized scene. \
+                Defaults to 1 (meaning the size is equal to --voxel-size), but set it to e.g. 0.95 to \
+                create a an effect of a tiny edge around each voxel."
+    )]
+    pub visualization_voxel_size_ratio: Option<f32>,
+}
+
+#[derive(Args)]
+pub struct ExportArgs {
+    #[arg(long = "output-file-path")]
+    pub output_file_path: PathBuf,
+
+    #[arg(
+        long = "export-type",
+        help = "One of: binary-edge_u1, binary-fill_u1, linear-rgb8-color_u8, metallic-value_u8"
+    )]
+    pub export_format: String,
+}
+
+impl ExportArgs {
+    pub fn export_format(&self) -> Result<VoxelExportType> {
+        let export_format = self.export_format.to_ascii_lowercase();
+
+        match export_format.as_str() {
+            "binary-edge_u1" => Ok(VoxelExportType::BinaryEdgeStateU1),
+            "linear-rgb8-color_u8" => Ok(VoxelExportType::LinearRgb8ColorU8),
+            _ => Err(miette!(
+                "Invalid export type, must be one of: binary-edge_u1, binary-fill_u1, \
+                linear-rgb8-color_u8, metallic-value_u8."
+            )),
+        }
+    }
+}
+
+
+
+#[derive(Subcommand)]
+pub enum CliCommand {
+    #[cfg(feature = "visualization")]
+    #[command(name = "visualize")]
+    Visualize(VisualizationArgs),
+
+    #[command(name = "export")]
+    Export(ExportArgs),
+}
 
 
 #[derive(Parser)]
@@ -37,14 +89,6 @@ pub struct CliArgs {
     pub voxel_size: f32,
 
     #[arg(
-        long = "visualization-voxel-size",
-        help = "Voxel size (full box width) to use for the visualization of the voxelized scene. \
-                Defaults to 1 (meaning the size is equal to --voxel-size), but set it to e.g. 0.95 to \
-                create a an effect of a tiny edge around each voxel."
-    )]
-    pub visualization_voxel_size_ratio: Option<f32>,
-
-    #[arg(
         short = 'b',
         long = "voxelization-bounds",
         help = "Maximum voxelization bounds as an AABB (axis-aligned bounding box) in world space. \
@@ -53,7 +97,9 @@ pub struct CliArgs {
                 Example: \"(-3, -2.5, -1) / (1, 1, 4.2)\""
     )]
     pub voxelization_bounds: Option<String>,
-    // TODO
+
+    #[command(subcommand)]
+    pub command: CliCommand,
 }
 
 
@@ -77,18 +123,24 @@ fn parse_xyz_components_from_str(xyz_string_in_parentheses: &str) -> Result<Vec3
     }
 
     let x_value = xyz_components[0]
+        .trim()
         .parse::<f32>()
         .into_diagnostic()
+        .wrap_err_with(|| miette!("Failed to parse {}", xyz_components[0]))
         .wrap_err(INVLIAD_VOXELIZATION_FORMAT_MESSAGE)?;
 
     let y_value = xyz_components[1]
+        .trim()
         .parse::<f32>()
         .into_diagnostic()
+        .wrap_err_with(|| miette!("Failed to parse {}", xyz_components[1]))
         .wrap_err(INVLIAD_VOXELIZATION_FORMAT_MESSAGE)?;
 
     let z_value = xyz_components[2]
+        .trim()
         .parse::<f32>()
         .into_diagnostic()
+        .wrap_err_with(|| miette!("Failed to parse {}", xyz_components[2]))
         .wrap_err(INVLIAD_VOXELIZATION_FORMAT_MESSAGE)?;
 
 
