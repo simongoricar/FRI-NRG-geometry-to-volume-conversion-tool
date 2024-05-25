@@ -177,7 +177,7 @@ fn set_up_volume(
         voxelized_scene.voxel_size,
     )));
 
-    let box_inside_mesh_material = standard_materials.add(Color::SEA_GREEN);
+    let box_inside_mesh_material = standard_materials.add(Color::rgba(0.18, 0.55, 0.34, 0.1));
 
 
 

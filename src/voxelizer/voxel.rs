@@ -104,7 +104,7 @@ fn combine_rgb_colors(colors_to_compose: &[Vec3]) -> Vec3 {
 pub enum NonFinalVoxelData {
     Empty,
     Edge {
-        base_color_or_texture_samples: Vec<Vec3>,
+        color_samples: Vec<Vec3>,
         metallic_value_samples: Vec<f32>,
         roughness_value_samples: Vec<f32>,
     },
@@ -136,7 +136,7 @@ impl NonFinalVoxelData {
         match self {
             NonFinalVoxelData::Empty => VoxelData::Empty,
             NonFinalVoxelData::Edge {
-                base_color_or_texture_samples,
+                color_samples: base_color_or_texture_samples,
                 metallic_value_samples,
                 roughness_value_samples,
             } => VoxelData::Edge {

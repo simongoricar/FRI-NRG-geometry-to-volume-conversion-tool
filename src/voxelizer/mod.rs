@@ -367,13 +367,13 @@ fn voxelize_individual_model(
                         match target_voxel.data {
                             NonFinalVoxelData::Empty | NonFinalVoxelData::InsideMesh => {
                                 *target_voxel.data = NonFinalVoxelData::Edge {
-                                    base_color_or_texture_samples: vec![sampled_color],
+                                    color_samples: vec![sampled_color],
                                     metallic_value_samples: vec![sampled_metallic_value],
                                     roughness_value_samples: vec![sampled_roughness_value],
                                 }
                             }
                             NonFinalVoxelData::Edge {
-                                base_color_or_texture_samples,
+                                color_samples: base_color_or_texture_samples,
                                 metallic_value_samples,
                                 roughness_value_samples,
                             } => {
@@ -411,22 +411,20 @@ fn voxelize_individual_model(
 
                 match current_voxel.data {
                     NonFinalVoxelData::Edge { .. } => {
-                        if !previous_was_edge {
-                            previous_was_edge = true;
-                        }
+                        previous_was_edge = true;
                     }
                     NonFinalVoxelData::Empty => {
                         if previous_was_edge {
                             if current_state == BinaryState::OutsideMesh {
                                 current_state = BinaryState::InsideMesh;
-
-                                *current_voxel.data = NonFinalVoxelData::InsideMesh;
                             } else {
                                 current_state = BinaryState::OutsideMesh;
                             }
 
                             previous_was_edge = false;
-                        } else if current_state == BinaryState::InsideMesh {
+                        }
+
+                        if current_state == BinaryState::InsideMesh {
                             *current_voxel.data = NonFinalVoxelData::InsideMesh;
                         }
                     }
@@ -512,7 +510,7 @@ fn voxelize_individual_model(
 
                 match current_voxel.data {
                     NonFinalVoxelData::Edge { .. } => break,
-                    NonFinalVoxelData::Empty => break,
+                    NonFinalVoxelData::Empty => {}
                     NonFinalVoxelData::InsideMesh => {
                         *current_voxel.data = NonFinalVoxelData::Empty;
                     }
@@ -529,7 +527,7 @@ fn voxelize_individual_model(
 
                 match current_voxel.data {
                     NonFinalVoxelData::Edge { .. } => break,
-                    NonFinalVoxelData::Empty => break,
+                    NonFinalVoxelData::Empty => {}
                     NonFinalVoxelData::InsideMesh => {
                         *current_voxel.data = NonFinalVoxelData::Empty;
                     }
