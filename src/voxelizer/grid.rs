@@ -13,9 +13,9 @@ pub struct NonFinalVoxelGrid {
 
     pub voxel_half_extent: f32,
 
-    x_length: u64,
-    y_length: u64,
-    z_length: u64,
+    pub x_length: u64,
+    pub y_length: u64,
+    pub z_length: u64,
 
     /// Indexed by x, y, and z, flattened out as a single Vec.
     grid: Vec<NonFinalVoxelData>,

@@ -31,6 +31,7 @@ use bevy::{
         Update,
         Vec3,
         Visibility,
+        VisibilityBundle,
         Without,
     },
     render::{
@@ -58,6 +59,7 @@ pub fn run_visualization(
     gltf_scene_file_path: &Path,
     voxelized_models: Vec<ContextualVoxelGrid>,
     voxel_size: f32,
+    initial_camera_position: Option<Vec3>,
 ) {
     App::new()
         .add_plugins((
@@ -74,7 +76,12 @@ pub fn run_visualization(
         .insert_resource(VoxelizedScene {
             voxelized_models,
             voxel_size,
-            is_visible: false,
+            edge_voxels_visible: false,
+            inner_voxels_visible: false,
+            original_mesh_visible: true,
+        })
+        .insert_resource(VisualizationOptions {
+            initial_camera_position,
         })
         .add_systems(Startup, (set_up_scene, set_up_volume))
         .add_systems(PreUpdate, set_up_scene_after_load)
@@ -87,6 +94,12 @@ pub fn run_visualization(
 
 
 #[derive(Resource)]
+pub struct VisualizationOptions {
+    initial_camera_position: Option<Vec3>,
+}
+
+
+#[derive(Resource)]
 pub struct OriginalSceneInfo {
     scene_path: String,
 }
@@ -95,8 +108,14 @@ pub struct OriginalSceneInfo {
 #[derive(Resource)]
 pub struct VoxelizedScene {
     pub voxelized_models: Vec<ContextualVoxelGrid>,
+
     pub voxel_size: f32,
-    pub is_visible: bool,
+
+    pub original_mesh_visible: bool,
+
+    pub edge_voxels_visible: bool,
+
+    pub inner_voxels_visible: bool,
 }
 
 
@@ -155,7 +174,7 @@ fn set_up_volume(
     mut standard_materials: ResMut<Assets<StandardMaterial>>,
 ) {
     let box_mesh_handle = meshes.add(Cuboid::from_size(Vec3::splat(
-        voxelized_scene.voxel_size * 0.95,
+        voxelized_scene.voxel_size,
     )));
 
     let box_inside_mesh_material = standard_materials.add(Color::SEA_GREEN);
@@ -165,8 +184,11 @@ fn set_up_volume(
     let voxel_edge_parent_entity = commands
         .spawn((
             VoxelEdgeParentMarker,
-            Visibility::Hidden,
-            InheritedVisibility::VISIBLE,
+            VisibilityBundle {
+                visibility: Visibility::Hidden,
+                inherited_visibility: InheritedVisibility::VISIBLE,
+                ..Default::default()
+            },
             TransformBundle::IDENTITY,
         ))
         .id();
@@ -174,8 +196,11 @@ fn set_up_volume(
     let voxel_inside_mesh_parent_entity = commands
         .spawn((
             VoxelInsideMeshParentMarker,
-            Visibility::Hidden,
-            InheritedVisibility::VISIBLE,
+            VisibilityBundle {
+                visibility: Visibility::Hidden,
+                inherited_visibility: InheritedVisibility::VISIBLE,
+                ..Default::default()
+            },
             TransformBundle::IDENTITY,
         ))
         .id();
@@ -256,32 +281,99 @@ fn set_up_volume(
         }
     }
 
-    voxelized_scene.is_visible = false;
+    voxelized_scene.edge_voxels_visible = false;
 }
 
 
+#[allow(clippy::type_complexity)]
 fn handle_user_input_for_volume_visibility_toggle(
     key_input: Res<ButtonInput<KeyCode>>,
     mut voxelized_mesh: ResMut<VoxelizedScene>,
-    mut mesh_edge_parent_entity: Query<
+    mut edge_voxels_parent_entity: Query<
         &mut Visibility,
-        (With<VoxelEdgeParentMarker>, Without<Handle<Mesh>>),
+        (
+            With<VoxelEdgeParentMarker>,
+            Without<Handle<Mesh>>,
+            Without<VoxelInsideMeshParentMarker>,
+        ),
     >,
-    mut meshes: Query<&mut Visibility, (With<Handle<Mesh>>, Without<VoxelEdgeParentMarker>)>,
+    mut inner_voxels_parent_entity: Query<
+        &mut Visibility,
+        (
+            With<VoxelInsideMeshParentMarker>,
+            Without<Handle<Mesh>>,
+            Without<VoxelEdgeParentMarker>,
+        ),
+    >,
+    mut meshes: Query<&mut Visibility, (With<Handle<Mesh>>, Without<VoxelMarker>)>,
 ) {
+    if key_input.just_pressed(KeyCode::KeyV) {
+        voxelized_mesh.original_mesh_visible = !voxelized_mesh.original_mesh_visible;
+
+        if voxelized_mesh.original_mesh_visible {
+            info!("Showing original mesh.");
+
+            for mut mesh_visibility in meshes.iter_mut() {
+                *mesh_visibility = Visibility::Visible;
+            }
+        } else {
+            info!("Hiding original mesh.");
+
+            for mut mesh_visibility in meshes.iter_mut() {
+                *mesh_visibility = Visibility::Hidden;
+            }
+        }
+    }
+
+    if key_input.just_pressed(KeyCode::KeyB) {
+        voxelized_mesh.edge_voxels_visible = !voxelized_mesh.edge_voxels_visible;
+
+        let mut voxel_edge_visibility = edge_voxels_parent_entity.single_mut();
+
+        if voxelized_mesh.edge_voxels_visible {
+            info!("Showing edge voxels.");
+
+            *voxel_edge_visibility = Visibility::Visible;
+        } else {
+            info!("Hiding edge voxels.");
+
+            *voxel_edge_visibility = Visibility::Hidden;
+        }
+    }
+
+    if key_input.just_pressed(KeyCode::KeyN) {
+        voxelized_mesh.inner_voxels_visible = !voxelized_mesh.inner_voxels_visible;
+
+        let mut voxel_inner_visibility = inner_voxels_parent_entity.single_mut();
+
+        if voxelized_mesh.inner_voxels_visible {
+            info!("Showing inner voxels.");
+
+            *voxel_inner_visibility = Visibility::Visible;
+        } else {
+            info!("Hiding inner voxels.");
+
+            *voxel_inner_visibility = Visibility::Hidden;
+        }
+    }
+
+    /*
     if !key_input.just_pressed(KeyCode::KeyV) {
         return;
     }
 
-    voxelized_mesh.is_visible = !voxelized_mesh.is_visible;
-    info!("is_visible = {}", voxelized_mesh.is_visible);
+    voxelized_mesh.edge_voxels_visible = !voxelized_mesh.edge_voxels_visible;
+    info!(
+        "is_visible = {}",
+        voxelized_mesh.edge_voxels_visible
+    );
 
-    let updated_voxel_visibility = match voxelized_mesh.is_visible {
+    let updated_voxel_visibility = match voxelized_mesh.edge_voxels_visible {
         true => Visibility::Visible,
         false => Visibility::Hidden,
     };
 
-    let updated_mesh_visibility = match !voxelized_mesh.is_visible {
+    let updated_mesh_visibility = match !voxelized_mesh.edge_voxels_visible {
         true => Visibility::Visible,
         false => Visibility::Hidden,
     };
@@ -293,19 +385,20 @@ fn handle_user_input_for_volume_visibility_toggle(
     // }
 
     // FIXME this doesn't toggle properly
-    let mut voxel_edge_visibility = mesh_edge_parent_entity.single_mut();
+    let mut voxel_edge_visibility = edge_voxels_parent_entity.single_mut();
     *voxel_edge_visibility = updated_voxel_visibility;
 
 
     for mut mesh_visibility in meshes.iter_mut() {
         *mesh_visibility = updated_mesh_visibility;
-    }
+    } */
 }
 
 
 #[allow(clippy::type_complexity)]
 fn set_up_scene_after_load(
     mut commands: Commands,
+    visualization_options: Res<VisualizationOptions>,
     mut scene_has_been_set_up: Local<bool>,
     mut scene_handle: ResMut<GltfSceneHandle>,
     meshes: Query<Option<&BevyAabb>, (With<Handle<Mesh>>, Without<VoxelMarker>)>,
@@ -343,16 +436,21 @@ fn set_up_scene_after_load(
         );
 
 
-        let mut camera_projection = PerspectiveProjection::default();
-        camera_projection.far = camera_projection.far.max(scene_aabb_size * 10.0);
+        let camera_projection = PerspectiveProjection::default();
+        // camera_projection.far = camera_projection.far.max(scene_aabb_size * 10.0);
 
         let camera_controller = CameraController::default();
 
+        let camera_transform = {
+            let initial_position = visualization_options
+                .initial_camera_position
+                .unwrap_or_else(|| {
+                    Vec3::from(scene_aabb.center) + scene_aabb_size * Vec3::new(1.8, 1.6, 1.8)
+                });
 
-        let camera_transform = Transform::from_translation(
-            Vec3::from(scene_aabb.center) + scene_aabb_size * Vec3::new(1.8, 1.6, 1.8),
-        )
-        .looking_at(Vec3::from(scene_aabb.center), Vec3::Y);
+            Transform::from_translation(initial_position)
+                .looking_at(Vec3::from(scene_aabb.center), Vec3::Y)
+        };
 
         info!(
             "Spawning a controllable camera at ({}, {}, {}) \

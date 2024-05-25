@@ -389,6 +389,157 @@ fn voxelize_individual_model(
     }
 
 
+    // Compute binary fill state.
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    enum BinaryState {
+        OutsideMesh,
+        InsideMesh,
+    }
+
+    for grid_index_x in 0..voxel_grid.x_length {
+        for grid_index_y in 0..voxel_grid.y_length {
+            let mut current_state = BinaryState::OutsideMesh;
+            let mut previous_was_edge = false;
+
+            for grid_index_z in 0..voxel_grid.z_length {
+                let current_voxel = voxel_grid
+                    .contextual_non_final_voxel_mut_by_xyz_index_unchecked(
+                        grid_index_x,
+                        grid_index_y,
+                        grid_index_z,
+                    );
+
+                match current_voxel.data {
+                    NonFinalVoxelData::Edge { .. } => {
+                        if !previous_was_edge {
+                            previous_was_edge = true;
+                        }
+                    }
+                    NonFinalVoxelData::Empty => {
+                        if previous_was_edge {
+                            if current_state == BinaryState::OutsideMesh {
+                                current_state = BinaryState::InsideMesh;
+
+                                *current_voxel.data = NonFinalVoxelData::InsideMesh;
+                            } else {
+                                current_state = BinaryState::OutsideMesh;
+                            }
+
+                            previous_was_edge = false;
+                        } else if current_state == BinaryState::InsideMesh {
+                            *current_voxel.data = NonFinalVoxelData::InsideMesh;
+                        }
+                    }
+                    NonFinalVoxelData::InsideMesh => {
+                        panic!("encountered InsideMesh voxel while generating them")
+                    }
+                }
+            }
+
+
+            if current_state == BinaryState::OutsideMesh {
+                continue;
+            }
+
+            for grid_index_z in (0..voxel_grid.z_length).rev() {
+                let current_voxel = voxel_grid
+                    .contextual_non_final_voxel_mut_by_xyz_index_unchecked(
+                        grid_index_x,
+                        grid_index_y,
+                        grid_index_z,
+                    );
+
+                match current_voxel.data {
+                    NonFinalVoxelData::Edge { .. } => break,
+                    NonFinalVoxelData::InsideMesh => {
+                        *current_voxel.data = NonFinalVoxelData::Empty;
+                    }
+                    NonFinalVoxelData::Empty => {}
+                }
+            }
+        }
+    }
+
+    for grid_index_z in 0..voxel_grid.z_length {
+        for grid_index_y in 0..voxel_grid.y_length {
+            for grid_index_x in 0..voxel_grid.x_length {
+                let current_voxel = voxel_grid
+                    .contextual_non_final_voxel_mut_by_xyz_index_unchecked(
+                        grid_index_x,
+                        grid_index_y,
+                        grid_index_z,
+                    );
+
+                match current_voxel.data {
+                    NonFinalVoxelData::Edge { .. } => {
+                        break;
+                    }
+                    NonFinalVoxelData::Empty => {}
+                    NonFinalVoxelData::InsideMesh => {
+                        *current_voxel.data = NonFinalVoxelData::Empty;
+                    }
+                }
+            }
+
+            for grid_index_x in (0..voxel_grid.x_length).rev() {
+                let current_voxel = voxel_grid
+                    .contextual_non_final_voxel_mut_by_xyz_index_unchecked(
+                        grid_index_x,
+                        grid_index_y,
+                        grid_index_z,
+                    );
+
+                match current_voxel.data {
+                    NonFinalVoxelData::Edge { .. } => break,
+                    NonFinalVoxelData::Empty => break,
+                    NonFinalVoxelData::InsideMesh => {
+                        *current_voxel.data = NonFinalVoxelData::Empty;
+                    }
+                }
+            }
+        }
+    }
+
+    for grid_index_z in 0..voxel_grid.z_length {
+        for grid_index_x in 0..voxel_grid.x_length {
+            for grid_index_y in 0..voxel_grid.y_length {
+                let current_voxel = voxel_grid
+                    .contextual_non_final_voxel_mut_by_xyz_index_unchecked(
+                        grid_index_x,
+                        grid_index_y,
+                        grid_index_z,
+                    );
+
+                match current_voxel.data {
+                    NonFinalVoxelData::Edge { .. } => break,
+                    NonFinalVoxelData::Empty => break,
+                    NonFinalVoxelData::InsideMesh => {
+                        *current_voxel.data = NonFinalVoxelData::Empty;
+                    }
+                }
+            }
+
+            for grid_index_y in (0..voxel_grid.y_length).rev() {
+                let current_voxel = voxel_grid
+                    .contextual_non_final_voxel_mut_by_xyz_index_unchecked(
+                        grid_index_x,
+                        grid_index_y,
+                        grid_index_z,
+                    );
+
+                match current_voxel.data {
+                    NonFinalVoxelData::Edge { .. } => break,
+                    NonFinalVoxelData::Empty => break,
+                    NonFinalVoxelData::InsideMesh => {
+                        *current_voxel.data = NonFinalVoxelData::Empty;
+                    }
+                }
+            }
+        }
+    }
+
+
+
     ContextualVoxelGrid {
         gltf_model_primitive_index: model.primitive_index(),
         grid: voxel_grid.into_final_grid(),

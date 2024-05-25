@@ -17,6 +17,7 @@ pub enum VoxelExportType {
     BinaryFillStateU1,
     LinearRgb8ColorU8,
     MetallicValueU8,
+    RoughnessValueU8,
 }
 
 
@@ -69,6 +70,83 @@ impl<'g> Read for BinaryEdgeStateU1RawWriter<'g> {
         let voxel_6 = self.next_voxel_fill_state().unwrap_or(false);
         let voxel_7 = self.next_voxel_fill_state().unwrap_or(false);
         let voxel_8 = self.next_voxel_fill_state().unwrap_or(false);
+
+
+        // Pack eight booleans into a u8.
+
+        let next_u8_value = {
+            let mut value: u8 = 0;
+
+            for (i, b) in [
+                voxel_1, voxel_2, voxel_3, voxel_4, voxel_5, voxel_6, voxel_7, voxel_8,
+            ]
+            .iter()
+            .rev()
+            .enumerate()
+            {
+                let bit = if *b { 1 } else { 0 };
+
+                value |= bit << i;
+            }
+
+            value
+        };
+
+
+        buf[0] = next_u8_value;
+        Ok(1)
+    }
+}
+
+
+pub struct BinaryFillStateU1RawWriter<'g> {
+    grid_voxels: &'g [VoxelData],
+    next_index: usize,
+}
+
+impl<'g> BinaryFillStateU1RawWriter<'g> {
+    pub fn from_grid(grid: &'g VoxelGrid) -> Self {
+        Self {
+            grid_voxels: grid.voxels(),
+            next_index: 0,
+        }
+    }
+
+    fn next_voxel_is_inside(&mut self) -> Option<bool> {
+        if self.next_index >= self.grid_voxels.len() {
+            None
+        } else {
+            let is_next_voxel_filled = matches!(
+                self.grid_voxels[self.next_index],
+                VoxelData::InsideMesh
+            );
+
+            self.next_index += 1;
+
+
+            Some(is_next_voxel_filled)
+        }
+    }
+}
+
+impl<'g> Read for BinaryFillStateU1RawWriter<'g> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.next_index >= self.grid_voxels.len() {
+            return Ok(0);
+        }
+
+
+        // Collect eight next voxels and collect them into a single byte
+        // (one bit per voxel - 1 if filled, 0 otherwise).
+
+        let voxel_1 = self.next_voxel_is_inside().unwrap();
+        let voxel_2 = self.next_voxel_is_inside().unwrap_or(false);
+        let voxel_3 = self.next_voxel_is_inside().unwrap_or(false);
+        let voxel_4 = self.next_voxel_is_inside().unwrap_or(false);
+        let voxel_5 = self.next_voxel_is_inside().unwrap_or(false);
+        let voxel_6 = self.next_voxel_is_inside().unwrap_or(false);
+        let voxel_7 = self.next_voxel_is_inside().unwrap_or(false);
+        let voxel_8 = self.next_voxel_is_inside().unwrap_or(false);
 
 
         // Pack eight booleans into a u8.
@@ -154,6 +232,102 @@ impl<'g> Read for LinearRgb8ColorU8RawWriter<'g> {
 
 
 
+pub struct MetallicValueU8RawWriter<'g> {
+    grid_voxels: &'g [VoxelData],
+    next_index: usize,
+}
+
+impl<'g> MetallicValueU8RawWriter<'g> {
+    pub fn from_grid(grid: &'g VoxelGrid) -> Self {
+        Self {
+            grid_voxels: grid.voxels(),
+            next_index: 0,
+        }
+    }
+}
+
+
+impl<'g> Read for MetallicValueU8RawWriter<'g> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.next_index >= self.grid_voxels.len() {
+            return Ok(0);
+        }
+
+        if buf.is_empty() {
+            panic!("expected a buffer of size at least 1");
+        }
+
+
+        let voxel = &self.grid_voxels[self.next_index];
+
+        let VoxelData::Edge { metallic_value, .. } = voxel else {
+            buf[0] = 0;
+
+            self.next_index += 1;
+
+            return Ok(1);
+        };
+
+
+        let metallic_value_u8 = (metallic_value * (u8::MAX as f32)) as u8;
+        buf[0] = metallic_value_u8;
+
+        self.next_index += 1;
+
+        Ok(3)
+    }
+}
+
+
+
+pub struct RoughnessValueU8RawWriter<'g> {
+    grid_voxels: &'g [VoxelData],
+    next_index: usize,
+}
+
+impl<'g> RoughnessValueU8RawWriter<'g> {
+    pub fn from_grid(grid: &'g VoxelGrid) -> Self {
+        Self {
+            grid_voxels: grid.voxels(),
+            next_index: 0,
+        }
+    }
+}
+
+
+impl<'g> Read for RoughnessValueU8RawWriter<'g> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.next_index >= self.grid_voxels.len() {
+            return Ok(0);
+        }
+
+        if buf.is_empty() {
+            panic!("expected a buffer of size at least 1");
+        }
+
+
+        let voxel = &self.grid_voxels[self.next_index];
+
+        let VoxelData::Edge { rougness_value, .. } = voxel else {
+            buf[0] = 0;
+
+            self.next_index += 1;
+
+            return Ok(1);
+        };
+
+
+        let roughness_value_u8 = (rougness_value * (u8::MAX as f32)) as u8;
+        buf[0] = roughness_value_u8;
+
+        self.next_index += 1;
+
+        Ok(3)
+    }
+}
+
+
+
 pub fn export_voxel_grid_as_raw<P>(
     output_file_path: P,
     grid: &VoxelGrid,
@@ -162,58 +336,62 @@ pub fn export_voxel_grid_as_raw<P>(
 where
     P: AsRef<Path>,
 {
+    let file = File::create(output_file_path)
+        .into_diagnostic()
+        .wrap_err("Failed to open file.")?;
+
+    let mut buffered_file = BufWriter::new(file);
+
+
     match voxel_export_type {
         VoxelExportType::BinaryEdgeStateU1 => {
             let mut file_data_producer = BinaryEdgeStateU1RawWriter::from_grid(grid);
 
-            let file = File::create(output_file_path)
+            io::copy(&mut file_data_producer, &mut buffered_file)
                 .into_diagnostic()
-                .wrap_err("Failed to open file.")?;
-
-            let mut buffered_file = BufWriter::new(file);
+                .wrap_err("Failed to write to file.")?;
+        }
+        VoxelExportType::BinaryFillStateU1 => {
+            let mut file_data_producer = BinaryFillStateU1RawWriter::from_grid(grid);
 
             io::copy(&mut file_data_producer, &mut buffered_file)
                 .into_diagnostic()
                 .wrap_err("Failed to write to file.")?;
-
-            let mut file = buffered_file
-                .into_inner()
-                .into_diagnostic()
-                .wrap_err("Failed to flush buffered writer.")?;
-
-            file.flush()
-                .into_diagnostic()
-                .wrap_err("Failed to flush unbuffered file.")?;
-
-            drop(file);
         }
-        VoxelExportType::BinaryFillStateU1 => todo!(),
         VoxelExportType::LinearRgb8ColorU8 => {
             let mut file_data_producer = LinearRgb8ColorU8RawWriter::from_grid(grid);
 
-            let file = File::create(output_file_path)
+            io::copy(&mut file_data_producer, &mut buffered_file)
                 .into_diagnostic()
-                .wrap_err("Failed to open file.")?;
-
-            let mut buffered_file = BufWriter::new(file);
+                .wrap_err("Failed to write to file.")?;
+        }
+        VoxelExportType::MetallicValueU8 => {
+            let mut file_data_producer = MetallicValueU8RawWriter::from_grid(grid);
 
             io::copy(&mut file_data_producer, &mut buffered_file)
                 .into_diagnostic()
                 .wrap_err("Failed to write to file.")?;
-
-            let mut file = buffered_file
-                .into_inner()
-                .into_diagnostic()
-                .wrap_err("Failed to flush buffered writer.")?;
-
-            file.flush()
-                .into_diagnostic()
-                .wrap_err("Failed to flush unbuffered file.")?;
-
-            drop(file);
         }
-        VoxelExportType::MetallicValueU8 => todo!(),
+        VoxelExportType::RoughnessValueU8 => {
+            let mut file_data_producer = RoughnessValueU8RawWriter::from_grid(grid);
+
+            io::copy(&mut file_data_producer, &mut buffered_file)
+                .into_diagnostic()
+                .wrap_err("Failed to write to file.")?;
+        }
     }
+
+
+    let mut file = buffered_file
+        .into_inner()
+        .into_diagnostic()
+        .wrap_err("Failed to flush buffered writer.")?;
+
+    file.flush()
+        .into_diagnostic()
+        .wrap_err("Failed to flush unbuffered file.")?;
+
+    drop(file);
 
 
     Ok(())

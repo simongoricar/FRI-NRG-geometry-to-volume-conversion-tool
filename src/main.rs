@@ -129,10 +129,13 @@ fn main() -> Result<()> {
                     .visualization_voxel_size_ratio
                     .unwrap_or(1.0);
 
+            let initial_camera_position = visualization_args.initial_camera_position()?;
+
             run_visualization(
                 &cli_args.gltf_file_path,
                 voxelized_scene,
                 visualization_voxel_size,
+                initial_camera_position,
             );
         }
 

@@ -16,7 +16,7 @@ bevy = { version = "0.13.2", features = ["dynamic_linking"], optional = true }
 
 easy-gltf = "1.1.2"
 # nalgebra = "0.32.5"
-glam = "0.27.0"
+glam = "0.25.0"
 # ndarray = "0.15.6"
 parry3d = "0.15.1"
 # cgmath = "0.18.0"

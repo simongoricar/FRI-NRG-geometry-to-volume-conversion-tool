@@ -17,7 +17,28 @@ pub struct VisualizationArgs {
                 create a an effect of a tiny edge around each voxel."
     )]
     pub visualization_voxel_size_ratio: Option<f32>,
+
+    #[arg(
+        long = "initial-camera-position",
+        help = "Initial camera position. The camera will be oriented to look towards the center of the scene. \
+                Defaults to an auto-calculated position based on the provided scene."
+    )]
+    pub initial_camera_position: Option<String>,
 }
+
+impl VisualizationArgs {
+    pub fn initial_camera_position(&self) -> Result<Option<Vec3>> {
+        let Some(initial_camera_position) = &self.initial_camera_position else {
+            return Ok(None);
+        };
+
+        Ok(Some(parse_xyz_components_from_str(
+            initial_camera_position,
+        )?))
+    }
+}
+
+
 
 #[derive(Args)]
 pub struct ExportArgs {
@@ -26,7 +47,7 @@ pub struct ExportArgs {
 
     #[arg(
         long = "export-type",
-        help = "One of: binary-edge_u1, binary-fill_u1, linear-rgb8-color_u8, metallic-value_u8"
+        help = "One of: binary-edge_u1, binary-fill_u1, linear-rgb8-color_u8, metallic-value_u8, roughness-value_u8."
     )]
     pub export_format: String,
 }
@@ -37,10 +58,13 @@ impl ExportArgs {
 
         match export_format.as_str() {
             "binary-edge_u1" => Ok(VoxelExportType::BinaryEdgeStateU1),
+            "binary-fill_u1" => Ok(VoxelExportType::BinaryFillStateU1),
             "linear-rgb8-color_u8" => Ok(VoxelExportType::LinearRgb8ColorU8),
+            "metallic-value_u8" => Ok(VoxelExportType::MetallicValueU8),
+            "roughness-value_u8" => Ok(VoxelExportType::RoughnessValueU8),
             _ => Err(miette!(
                 "Invalid export type, must be one of: binary-edge_u1, binary-fill_u1, \
-                linear-rgb8-color_u8, metallic-value_u8."
+                linear-rgb8-color_u8, metallic-value_u8, roughness-value_u8."
             )),
         }
     }
@@ -112,9 +136,9 @@ fn parse_xyz_components_from_str(xyz_string_in_parentheses: &str) -> Result<Vec3
     let xyz_without_parentheses = xyz_string_in_parentheses
         .trim()
         .strip_prefix("(")
-        .ok_or_else(|| miette!(INVLIAD_VOXELIZATION_FORMAT_MESSAGE))?
+        .unwrap_or(xyz_string_in_parentheses)
         .strip_suffix(")")
-        .ok_or_else(|| miette!(INVLIAD_VOXELIZATION_FORMAT_MESSAGE))?;
+        .unwrap_or(xyz_string_in_parentheses);
 
 
     let xyz_components = xyz_without_parentheses.split(',').collect::<Vec<_>>();
