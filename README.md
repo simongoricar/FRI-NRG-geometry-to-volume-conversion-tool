@@ -91,3 +91,19 @@ Options:
   -h, --help
           Print help
 ```
+
+
+## Example
+```bash
+cargo run --release -- \
+    --voxel-size 0.07 \
+    --gltf-file-path ./assets/mesh-sample-01/mesh-sample-01_torus_textured_v2.gltf \
+    --voxelization-bounds "(-10.0, -10.0, -10.0) / (10.0, 10.0, 10.0)" \
+    export --export-type binary-edge_u1 --output-file-path ./exports/torus-three
+
+cargo run --release -- \
+    --voxel-size 0.07 \
+    --gltf-file-path ./assets/mesh-sample-01/mesh-sample-01_torus_textured_v2.gltf \
+    --voxelization-bounds "(-10.0, -10.0, -10.0) / (10.0, 10.0, 10.0)" \
+    visualize
+```

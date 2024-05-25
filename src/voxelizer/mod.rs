@@ -298,6 +298,7 @@ fn voxelize_individual_model(
 
     let model_material = model.material();
 
+    println!("Voxelizing {} triangles.", model_triangles.len());
 
     for triangle in model_triangles {
         let triangle_aabb = compute_aabb_for_mesh_triangle(&triangle);
