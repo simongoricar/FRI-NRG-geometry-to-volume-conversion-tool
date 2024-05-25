@@ -41,7 +41,7 @@ impl<'g> BinaryEdgeStateU1RawWriter<'g> {
         } else {
             let is_next_voxel_filled = matches!(
                 self.grid_voxels[self.next_index],
-                VoxelData::Edge { .. }
+                VoxelData::Edge { .. } | VoxelData::InsideMesh
             );
 
             self.next_index += 1;
