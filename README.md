@@ -20,15 +20,20 @@ NRG seminar work<br>
 To compile this tool, you'll need a reasonably recent version of the Rust compiler (tested on `1.80.0-nightly`, but that should not be required).
 
 Clone the project (you will need Git LFS installed). 
-Afterwards, run `cargo build --release` to compile the project in release mode. This should take quite a few minutes.
+Afterwards, run `cargo build --release` to compile the project in release mode. This will take quite a few minutes, depending on your machine, 
+but generally less than twenty minutes.
+
 If you wish to compile the project without visualization features, run `cargo build --release --no-default-features` instead.
+Note that when compiled without the `visualization` featuer flag (as above), the `visualize` command will not be available.
 
 You can find the resulting binary in `./target/release`.
 
 
 # Usage
+> Example invocations are available at the bottom.
+
 When running the tool, you must select either the `export` or `visualize` subcommand (described below).
-As far as global options go, they are the following:
+As far as global options go, see the following:
 
 ```md
 Usage: nrg-mesh-to-volume-conversion [OPTIONS] 
