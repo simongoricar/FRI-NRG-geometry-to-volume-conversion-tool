@@ -1,11 +1,26 @@
 <h1 align="center">Geometry to volume conversion</h1>
-<h3 align="center">NRG seminar</h3>
+<h3 align="center">
+
+NRG seminar work<br>
+<sub>Faculty for Computer and Information Science</sub><br>
+<sub>University of Ljubljana</sub>
+</h3>
 
 
-# Compiling
+<div align="center">
+
+![MIT-licensed](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
+![Tested on 1.80.0-nightly Rust](https://img.shields.io/badge/tested_Rust_version-1.80.0--nightly-orange?style=flat-square)
+</div>
+
+
+
+
+# Compilation
 To compile this tool, you'll need a reasonably recent version of the Rust compiler (tested on `1.80.0-nightly`, but that should not be required).
 
-Clone the project and run `cargo build --release` to compile the project in release mode. This should take quite a few minutes.
+Clone the project (you will need Git LFS installed). 
+Afterwards, run `cargo build --release` to compile the project in release mode. This should take quite a few minutes.
 If you wish to compile the project without visualization features, run `cargo build --release --no-default-features` instead.
 
 You can find the resulting binary in `./target/release`.
